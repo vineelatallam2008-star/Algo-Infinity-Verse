@@ -990,6 +990,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLoadingScreen();
   initNavbar();
   initHeroSection();
+  initTopicOfTheDay();
   initTopicsSection();
   initQuizSection();
   initPracticeSection();
@@ -1028,34 +1029,6 @@ document.addEventListener("DOMContentLoaded", () => {
     topicModal.addEventListener("click", (e) => {
       if (e.target === topicModal) {
         closeTopicModal();
-      }
-    });
-  }
-
-  const saveNotesBtn = document.getElementById("saveNotesBtn");
-
-  if (saveNotesBtn) {
-    saveNotesBtn.addEventListener("click", saveProblemNotes);
-  }
-
-  const notesModalClose = document.getElementById("notesModalClose");
-
-  if (notesModalClose) {
-    notesModalClose.addEventListener("click", closeNotesModal);
-  }
-
-  const closeNotesBtn = document.getElementById("closeNotesBtn");
-
-  if (closeNotesBtn) {
-    closeNotesBtn.addEventListener("click", closeNotesModal);
-  }
-
-  const notesModal = document.getElementById("notesModal");
-
-  if (notesModal) {
-    notesModal.addEventListener("click", (e) => {
-      if (e.target === notesModal) {
-        closeNotesModal();
       }
     });
   }
@@ -1323,23 +1296,92 @@ document.addEventListener("click", (e) => {
   }
 });
 
+function getTopicProgress(topicName) {
+  // Map topic names to category keys used in practiceProblems
+  const categoryMap = {
+      "Arrays": "arrays",
+      "Strings": "strings",
+      "Linked List": "linkedlist",
+      "Trees": "trees",
+      "Graphs": "graphs",
+      "Dynamic Programming": "dp"
+  };
+
+  const category = categoryMap[topicName];
+  if (!category) return { completed: 0, total: 0, percentage: 0 };
+
+  const topicProblems = practiceProblems.filter(p => p.category === category);
+  const total = topicProblems.length;
+  if (total === 0) return { completed: 0, total: 0, percentage: 0 };
+
+  const completed = topicProblems.filter(p =>
+      userProgress.completedProblems.includes(p.id)
+  ).length;
+
+  const percentage = Math.round((completed / total) * 100);
+  return { completed, total, percentage };
+}
+
 // ===== TOPICS SECTION =====
+function getDailyTopic() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const diff = now - start;
+  const oneDay = 1000 * 60 * 60 * 24;
+  const dayOfYear = Math.floor(diff / oneDay);
+  const index = dayOfYear % dsaTopics.length;
+  return dsaTopics[index];
+}
+
+function initTopicOfTheDay() {
+  const topic = getDailyTopic();
+  if (!topic) return;
+
+  document.getElementById('totdIcon').textContent = topic.icon;
+  document.getElementById('totdTitle').textContent = topic.name;
+  document.getElementById('totdDesc').textContent = topic.description;
+
+  const diffEl = document.getElementById('totdDifficulty');
+  diffEl.textContent = topic.difficulty;
+  diffEl.className = `totd-difficulty difficulty-badge ${getDifficultyClass(topic.difficulty)}`;
+
+  const progress = getTopicProgress(topic.name);
+  document.getElementById('totdProblems').textContent =
+      `${progress.completed}/${progress.total} solved`;
+
+  document.getElementById('totdBtn').addEventListener('click', () => {
+      openTopicModal(topic);
+  });
+}
+
 function initTopicsSection() {
   const topicsGrid = document.querySelector(".topics-grid");
-
+  topicsGrid.innerHTML = '';
   dsaTopics.forEach((topic, index) => {
     const card = document.createElement("div");
     card.className = "topic-card animate-in";
     card.style.animationDelay = `${index * 0.1}s`;
+    const progress = getTopicProgress(topic.name);
+
     card.innerHTML = `
-            <div class="topic-icon">${topic.icon}</div>
-            <h3 class="topic-name">${topic.name}</h3>
-            <p class="topic-desc">${topic.description}</p>
-            <div class="topic-meta">
-                <span class="difficulty-badge ${getDifficultyClass(topic.difficulty)}">${topic.difficulty}</span>
-                <span class="topic-count">${topic.problems.length} problems</span>
+        <div class="topic-icon">${topic.icon}</div>
+        <h3 class="topic-name">${topic.name}</h3>
+        <p class="topic-desc">${topic.description}</p>
+        <div class="topic-meta">
+            <span class="difficulty-badge ${getDifficultyClass(topic.difficulty)}">${topic.difficulty}</span>
+            <span class="topic-count">${progress.total} problems</span>
+        </div>
+        <div class="topic-mastery">
+            <div class="mastery-header">
+                <span class="mastery-label">Progress</span>
+                <span class="mastery-stats">${progress.completed}/${progress.total} solved</span>
             </div>
-        `;
+            <div class="mastery-bar" role="progressbar" aria-valuenow="${progress.percentage}" aria-valuemin="0" aria-valuemax="100" aria-label="${topic.name} mastery progress">
+                <div class="mastery-fill" style="width: ${progress.percentage}%"></div>
+            </div>
+            <span class="mastery-percentage">${progress.percentage}%</span>
+        </div>
+    `;
 
     topicsGrid.appendChild(card);
 
@@ -1684,7 +1726,7 @@ function showQuizResults(score, total, percentage, xpEarned) {
 
   resultEl.classList.remove("hidden");
 }
-let currentNotesProblemId = null;
+
 // ===== PRACTICE SECTION =====
 function initPracticeSection() {
   const problemsGrid = document.querySelector(".problems-grid");
@@ -1771,11 +1813,6 @@ function renderProblems(filter = "all", searchQuery = "") {
 data-id="${problem.id}">
         <i class="fas fa-heart"></i>
     </button>
-    <button class="notes-btn ${
-      userProgress.problemNotes[problem.id] ? "has-notes" : ""
-    }" data-id="${problem.id}">
-  <i class="fas fa-sticky-note"></i>
-</button>
 
                 <span class="difficulty-badge ${getDifficultyClass(problem.difficulty)}">${problem.difficulty}</span>
             </div>
@@ -1811,17 +1848,6 @@ data-id="${problem.id}">
     });
   });
 
-  // Notes button handlers
-  problemsGrid.querySelectorAll(".notes-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-
-      const problemId = parseInt(btn.dataset.id);
-      currentNotesProblemId = problemId;
-      openNotesModal(problemId);
-    });
-  });
-
   // Add click handlers
   problemsGrid.querySelectorAll(".problem-card").forEach((card) => {
     card.addEventListener("click", () => {
@@ -1845,39 +1871,6 @@ function toggleFavorite(problemId) {
   }
 
   saveUserData();
-}
-
-function openNotesModal(problemId) {
-  currentNotesProblemId = problemId;
-
-  const modal = document.getElementById("notesModal");
-  const textarea = document.getElementById("problemNotesInput");
-
-  textarea.value = userProgress.problemNotes[problemId] || "";
-
-  modal.classList.add("active");
-}
-
-function closeNotesModal() {
-  const modal = document.getElementById("notesModal");
-
-  modal.classList.remove("active");
-}
-
-function saveProblemNotes() {
-  const textarea = document.getElementById("problemNotesInput");
-
-  const note = textarea.value.trim();
-
-  if (currentNotesProblemId !== null) {
-    userProgress.problemNotes[currentNotesProblemId] = note;
-
-    saveUserData();
-
-    showNotification("Notes saved successfully 📝", "success");
-  }
-
-  closeNotesModal();
 }
 
 // ===== ROADMAP =====
@@ -2190,16 +2183,6 @@ function updateBadges() {
     },
   ];
 
-  // Update userProgress badges
-  const newlyEarned = badges.filter((b) => b.earned).map((b) => b.id);
-  
-  // Only save if badges changed to avoid unnecessary saves
-  const badgesChanged = JSON.stringify(newlyEarned) !== JSON.stringify(userProgress.badges);
-  userProgress.badges = newlyEarned;
-  if (badgesChanged) {
-      saveUserData();
-  }
-
   // Dashboard badges
   container.innerHTML = badges
     .map(
@@ -2367,7 +2350,7 @@ function initChatbot() {
     if (!message) return;
 
     // Add user message
-    addChatMessage(message, "user");
+    addChatMessage(`<p>${message}</p>`, "user");
 
     // Store previous question
     lastQuestion = message;
@@ -2423,13 +2406,7 @@ function addChatMessage(message, sender) {
   const messagesContainer = document.getElementById("chatbotMessages");
   const messageEl = document.createElement("div");
   messageEl.className = `message ${sender}`;
-  // Safe rendering
-  if (sender === "user") {
-    messageEl.textContent = message;
-  } else {
-    messageEl.innerHTML = message;
-  }
-
+  messageEl.innerHTML = message;
   messagesContainer.appendChild(messageEl);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
@@ -2449,10 +2426,10 @@ function getBotResponse(question) {
   return `
     <div class="assistant-response">
       <h4>🧠 Problem Understanding</h4>
-      <p>${escapeHtml(question)}</p>
+      <p>${question}</p>
 
       <h4>⚡ Approach</h4>
-      <p>${escapeHtml(response)}</p>
+      <p>${response}</p>
 
       <h4>💻 Code Solution</h4>
       <pre><code>
@@ -2552,14 +2529,6 @@ function initializeAnimations() {
   });
 }
 
-function getDaysDifference(date1, date2) {
-  const d1 = new Date(date1);
-  d1.setHours(0, 0, 0, 0);
-  const d2 = new Date(date2);
-  d2.setHours(0, 0, 0, 0);
-  return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-}
-
 // ===== LOCAL STORAGE =====
 function saveUserData() {
   try {
@@ -2589,7 +2558,9 @@ function loadUserData() {
       if (userProgress.lastActive) {
         const lastActive = new Date(userProgress.lastActive);
         const today = new Date();
-        const diffDays = getDaysDifference(lastActive, today);
+        const diffDays = Math.floor(
+          (today - lastActive) / (1000 * 60 * 60 * 24),
+        );
 
         if (diffDays === 0) {
           // Already active today
@@ -2622,8 +2593,6 @@ function loadUserData() {
       xp: 0,
       level: 1,
       streak: 0,
-      favoriteProblems: [],
-      problemNotes: {},
       badges: [],
       lastActive: null,
       quizScores: {},
@@ -2726,6 +2695,7 @@ function submitQuizCode() {
   updateDashboard();
   updateGamification();
   initRoadmap();
+  initTopicsSection(); 
 
   closeQuizEditor();
   showNotification(
@@ -2882,7 +2852,7 @@ function updateStreak() {
     : null;
 
   if (lastActive) {
-    const diffDays = getDaysDifference(lastActive, today);
+    const diffDays = Math.floor((today - lastActive) / (1000 * 60 * 60 * 24));
     if (diffDays > 1) {
       userProgress.streak = 1;
     } else if (diffDays === 0) {
@@ -3039,58 +3009,6 @@ function formatCode() {
   editor.dispatchEvent(new Event("input"));
   updateLineNumbers();
   showNotification("Code formatted", "info");
-}
-// Copy code to clipboard
-function copyCode() {
-    const editor = document.getElementById('codeEditor');
-    const code = editor.value;
-
-    if (!code.trim()) {
-        showCopyFeedback('Nothing to copy!', false);
-        return;
-    }
-
-    // Modern Clipboard API with fallback
-    if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(code)
-            .then(() => showCopyFeedback('Copied!', true))
-            .catch(() => fallbackCopy(code));
-    } else {
-        fallbackCopy(code);
-    }
-}
-
-function fallbackCopy(text) {
-    // Fallback for HTTP or older browsers
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-        document.execCommand('copy');
-        showCopyFeedback('Copied!', true);
-    } catch {
-        showCopyFeedback('Copy failed — please copy manually.', false);
-    }
-    document.body.removeChild(textarea);
-}
-
-function showCopyFeedback(message, success) {
-    const btn = document.getElementById('copyCodeBtn');
-    if (!btn) return;
-
-    const original = btn.innerHTML;
-    btn.innerHTML = success
-        ? '<i class="fas fa-check"></i> ' + message
-        : '<i class="fas fa-times"></i> ' + message;
-    btn.style.color = success ? '#22c55e' : '#ef4444';
-
-    setTimeout(() => {
-        btn.innerHTML = original;
-        btn.style.color = '';
-    }, 2000);
 }
 
 // Toggle line comment
