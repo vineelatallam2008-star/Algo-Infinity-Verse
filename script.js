@@ -968,8 +968,13 @@ let userProgress = {
   name: "Learner",
   avatar: "🚀",
   completedProblems: [],
+
   favoriteProblems: [],//here i have added a new property to store the user's favorite problems
   recentProblems: [], //here i have added a new property to store the user's recent problems
+
+  favoriteProblems: [], //here i have added a new property to store the user's favorite problems
+  problemNotes: {},
+
   xp: 0,
   level: 1,
   streak: 0,
@@ -1023,6 +1028,34 @@ document.addEventListener("DOMContentLoaded", () => {
     topicModal.addEventListener("click", (e) => {
       if (e.target === topicModal) {
         closeTopicModal();
+      }
+    });
+  }
+
+  const saveNotesBtn = document.getElementById("saveNotesBtn");
+
+  if (saveNotesBtn) {
+    saveNotesBtn.addEventListener("click", saveProblemNotes);
+  }
+
+  const notesModalClose = document.getElementById("notesModalClose");
+
+  if (notesModalClose) {
+    notesModalClose.addEventListener("click", closeNotesModal);
+  }
+
+  const closeNotesBtn = document.getElementById("closeNotesBtn");
+
+  if (closeNotesBtn) {
+    closeNotesBtn.addEventListener("click", closeNotesModal);
+  }
+
+  const notesModal = document.getElementById("notesModal");
+
+  if (notesModal) {
+    notesModal.addEventListener("click", (e) => {
+      if (e.target === notesModal) {
+        closeNotesModal();
       }
     });
   }
@@ -1651,7 +1684,7 @@ function showQuizResults(score, total, percentage, xpEarned) {
 
   resultEl.classList.remove("hidden");
 }
-
+let currentNotesProblemId = null;
 // ===== PRACTICE SECTION =====
 function initPracticeSection() {
   const problemsGrid = document.querySelector(".problems-grid");
@@ -1738,6 +1771,11 @@ function renderProblems(filter = "all", searchQuery = "") {
 data-id="${problem.id}">
         <i class="fas fa-heart"></i>
     </button>
+    <button class="notes-btn ${
+      userProgress.problemNotes[problem.id] ? "has-notes" : ""
+    }" data-id="${problem.id}">
+  <i class="fas fa-sticky-note"></i>
+</button>
 
                 <span class="difficulty-badge ${getDifficultyClass(problem.difficulty)}">${problem.difficulty}</span>
             </div>
@@ -1773,6 +1811,17 @@ data-id="${problem.id}">
     });
   });
 
+  // Notes button handlers
+  problemsGrid.querySelectorAll(".notes-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      const problemId = parseInt(btn.dataset.id);
+      currentNotesProblemId = problemId;
+      openNotesModal(problemId);
+    });
+  });
+
   // Add click handlers
   problemsGrid.querySelectorAll(".problem-card").forEach((card) => {
     card.addEventListener("click", () => {
@@ -1796,6 +1845,39 @@ function toggleFavorite(problemId) {
   }
 
   saveUserData();
+}
+
+function openNotesModal(problemId) {
+  currentNotesProblemId = problemId;
+
+  const modal = document.getElementById("notesModal");
+  const textarea = document.getElementById("problemNotesInput");
+
+  textarea.value = userProgress.problemNotes[problemId] || "";
+
+  modal.classList.add("active");
+}
+
+function closeNotesModal() {
+  const modal = document.getElementById("notesModal");
+
+  modal.classList.remove("active");
+}
+
+function saveProblemNotes() {
+  const textarea = document.getElementById("problemNotesInput");
+
+  const note = textarea.value.trim();
+
+  if (currentNotesProblemId !== null) {
+    userProgress.problemNotes[currentNotesProblemId] = note;
+
+    saveUserData();
+
+    showNotification("Notes saved successfully 📝", "success");
+  }
+
+  closeNotesModal();
 }
 
 // ===== ROADMAP =====
@@ -2108,6 +2190,16 @@ function updateBadges() {
     },
   ];
 
+  // Update userProgress badges
+  const newlyEarned = badges.filter((b) => b.earned).map((b) => b.id);
+  
+  // Only save if badges changed to avoid unnecessary saves
+  const badgesChanged = JSON.stringify(newlyEarned) !== JSON.stringify(userProgress.badges);
+  userProgress.badges = newlyEarned;
+  if (badgesChanged) {
+      saveUserData();
+  }
+
   // Dashboard badges
   container.innerHTML = badges
     .map(
@@ -2275,7 +2367,7 @@ function initChatbot() {
     if (!message) return;
 
     // Add user message
-    addChatMessage(`<p>${message}</p>`, "user");
+    addChatMessage(message, "user");
 
     // Store previous question
     lastQuestion = message;
@@ -2331,7 +2423,13 @@ function addChatMessage(message, sender) {
   const messagesContainer = document.getElementById("chatbotMessages");
   const messageEl = document.createElement("div");
   messageEl.className = `message ${sender}`;
-  messageEl.innerHTML = message;
+  // Safe rendering
+  if (sender === "user") {
+    messageEl.textContent = message;
+  } else {
+    messageEl.innerHTML = message;
+  }
+
   messagesContainer.appendChild(messageEl);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
@@ -2351,10 +2449,10 @@ function getBotResponse(question) {
   return `
     <div class="assistant-response">
       <h4>🧠 Problem Understanding</h4>
-      <p>${question}</p>
+      <p>${escapeHtml(question)}</p>
 
       <h4>⚡ Approach</h4>
-      <p>${response}</p>
+      <p>${escapeHtml(response)}</p>
 
       <h4>💻 Code Solution</h4>
       <pre><code>
@@ -2454,6 +2552,14 @@ function initializeAnimations() {
   });
 }
 
+function getDaysDifference(date1, date2) {
+  const d1 = new Date(date1);
+  d1.setHours(0, 0, 0, 0);
+  const d2 = new Date(date2);
+  d2.setHours(0, 0, 0, 0);
+  return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+}
+
 // ===== LOCAL STORAGE =====
 function saveUserData() {
   try {
@@ -2483,9 +2589,7 @@ function loadUserData() {
       if (userProgress.lastActive) {
         const lastActive = new Date(userProgress.lastActive);
         const today = new Date();
-        const diffDays = Math.floor(
-          (today - lastActive) / (1000 * 60 * 60 * 24),
-        );
+        const diffDays = getDaysDifference(lastActive, today);
 
         if (diffDays === 0) {
           // Already active today
@@ -2518,6 +2622,8 @@ function loadUserData() {
       xp: 0,
       level: 1,
       streak: 0,
+      favoriteProblems: [],
+      problemNotes: {},
       badges: [],
       lastActive: null,
       quizScores: {},
@@ -2776,7 +2882,7 @@ function updateStreak() {
     : null;
 
   if (lastActive) {
-    const diffDays = Math.floor((today - lastActive) / (1000 * 60 * 60 * 24));
+    const diffDays = getDaysDifference(lastActive, today);
     if (diffDays > 1) {
       userProgress.streak = 1;
     } else if (diffDays === 0) {
@@ -2933,6 +3039,58 @@ function formatCode() {
   editor.dispatchEvent(new Event("input"));
   updateLineNumbers();
   showNotification("Code formatted", "info");
+}
+// Copy code to clipboard
+function copyCode() {
+    const editor = document.getElementById('codeEditor');
+    const code = editor.value;
+
+    if (!code.trim()) {
+        showCopyFeedback('Nothing to copy!', false);
+        return;
+    }
+
+    // Modern Clipboard API with fallback
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(code)
+            .then(() => showCopyFeedback('Copied!', true))
+            .catch(() => fallbackCopy(code));
+    } else {
+        fallbackCopy(code);
+    }
+}
+
+function fallbackCopy(text) {
+    // Fallback for HTTP or older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        showCopyFeedback('Copied!', true);
+    } catch {
+        showCopyFeedback('Copy failed — please copy manually.', false);
+    }
+    document.body.removeChild(textarea);
+}
+
+function showCopyFeedback(message, success) {
+    const btn = document.getElementById('copyCodeBtn');
+    if (!btn) return;
+
+    const original = btn.innerHTML;
+    btn.innerHTML = success
+        ? '<i class="fas fa-check"></i> ' + message
+        : '<i class="fas fa-times"></i> ' + message;
+    btn.style.color = success ? '#22c55e' : '#ef4444';
+
+    setTimeout(() => {
+        btn.innerHTML = original;
+        btn.style.color = '';
+    }, 2000);
 }
 
 // Toggle line comment
